@@ -284,13 +284,122 @@ Common possibilities:
 Best first question:
 - where exactly did this occur: workflow start, signal/update, query, poll loop, or general logs?
 
+### `context deadline exceeded` with PrivateLink
+
+When using AWS PrivateLink or GCP Private Service Connect, `context deadline exceeded` usually means one of these issues in order of likelihood:
+
+**1. PrivateLink not enabled on the namespace**
+
+Verify in the Cloud UI: `https://cloud.temporal.io/namespaces/<namespace>` → Connect → look for PrivateLink. If not enabled, submit a support ticket including your AWS Account ID and Region.
+
+**2. Network connectivity to the VPC endpoint**
+
+Test from within your application environment (e.g., a Kubernetes pod):
+
+```bash
+# Install if needed: apk add netcat-openbsd
+nc -v -w2 <vpc-endpoint-dns>:7233
+```
+
+A successful result shows `succeeded!`. If it times out, the issue is likely VPC security groups or network ACLs not permitting TCP on port 7233.
+
+**3. TLS handshake failure**
+
+Test the full TLS handshake with client certificates:
+
+```bash
+openssl s_client \
+  -connect <vpc-endpoint-dns>:7233 \
+  -cert client.pem -key client.key \
+  -servername <namespace>.tmprl.cloud
+```
+
+A successful handshake shows `SSL handshake has read NNNN bytes` with `Verification: OK`. If it shows `read 0 bytes`, check VPC endpoint security group inbound rules for port 7233.
+
+**4. Missing TLS server name override in SDK configuration**
+
+When connecting through a VPC endpoint, the TLS server name must be overridden to match the namespace endpoint. Without this, the TLS handshake will fail even if network connectivity succeeds.
+
+**temporal CLI:**
+
+```bash
+temporal workflow count \
+  --address <vpc-endpoint-dns>:7233 \
+  --tls-cert-path ./client.pem \
+  --tls-key-path ./client.key \
+  --tls-server-name <namespace>.tmprl.cloud \
+  --namespace <namespace>
+```
+
+**Java SDK (PrivateLink with mTLS):**
+
+```java
+SslContext sslContext = SimpleSslContextBuilder
+    .forPKCS8(clientCertInputStream, clientKeyInputStream).build();
+
+WorkflowServiceStubs service =
+    WorkflowServiceStubs.newServiceStubs(
+        WorkflowServiceStubsOptions.newBuilder()
+            .setSslContext(sslContext)
+            .setTarget("<vpc-endpoint-dns>:7233")
+            .setChannelInitializer(
+                c -> c.overrideAuthority("<namespace>.tmprl.cloud"))
+            .build());
+```
+
+**Go SDK:**
+
+```go
+c, err := client.Dial(client.Options{
+    HostPort:  "<vpc-endpoint-dns>:7233",
+    Namespace: "<namespace>",
+    ConnectionOptions: client.ConnectionOptions{
+        TLS: &tls.Config{
+            Certificates: []tls.Certificate{cert},
+            ServerName:   "<namespace>.tmprl.cloud",
+        },
+    },
+})
+```
+
+**Python SDK:**
+
+```python
+client = await Client.connect(
+    "<vpc-endpoint-dns>:7233",
+    namespace="<namespace>",
+    tls=TLSConfig(
+        client_cert=cert_bytes,
+        client_private_key=key_bytes,
+        domain="<namespace>.tmprl.cloud",
+    ),
+)
+```
+
+**TypeScript SDK:**
+
+```typescript
+const connection = await NativeConnection.connect({
+  address: "<vpc-endpoint-dns>:7233",
+  tls: {
+    serverNameOverride: "<namespace>.tmprl.cloud",
+    clientCertPair: {
+      crt: fs.readFileSync(clientCertPath),
+      key: fs.readFileSync(clientKeyPath),
+    },
+  },
+});
+```
+
+**Note:** Temporal recommends using [private DNS](https://docs.temporal.io/cloud/connectivity) instead of manual server name overrides when possible. With private DNS configured, the namespace endpoint (`<namespace>.tmprl.cloud:7233`) resolves directly to the VPC endpoint, eliminating the need for TLS server name overrides.
+
 ### `workflow is busy` / `RESOURCE_EXHAUSTED: Workflow is busy`
 
 This is often interpreted too broadly. It commonly indicates contention or temporary execution delay on a specific operation, not necessarily a hard workflow failure.
 
 Common possibilities:
-- operation-level contention or throttling
-- workload pressure or insufficient worker capacity
+- operation-level contention or throttling (e.g., concurrent signals/updates to the same workflow)
+- too many pending activities, child workflows, or timers on a single workflow execution
 - user misunderstanding of what the error class refers to
 
 Best first questions:
@@ -327,7 +436,7 @@ Best first checks:
 
 | Error | Meaning | Common Causes |
 |-------|---------|---------------|
-| `PERMISSION_DENIED` | Not authorized | Wrong namespace, missing permissions |
+| `PERMISSION_DENIED` | Not authorized | Wrong namespace, missing permissions, certificate filter mismatch |
 | `UNAUTHENTICATED` | Auth failed | Invalid cert, expired token |
 | `INVALID_ARGUMENT: namespace not found` | Namespace doesn't exist | Typo, wrong account |
 
