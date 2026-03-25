@@ -22,17 +22,11 @@ Two main CLIs for Temporal Cloud:
 # Standard login (opens browser)
 tcld login
 
-# Headless/SSH environments (manual token entry)
-tcld login --disable-pop-up
-
 # Clear stale tokens and re-auth
 tcld logout && tcld login
 
-# Check current config
-tcld config get
-
-# Switch account/organization
-tcld config set account <account-id>
+# Check current account context
+tcld account get
 ```
 
 ### Namespace Management
@@ -58,35 +52,58 @@ tcld namespace accepted-client-ca remove --namespace <namespace> --fp <fingerpri
 
 ```bash
 # Generate new CA
-tcld gen ca --org temporal --validity-period 365d -d output_dir
+tcld generate-certificates certificate-authority-certificate \
+  --organization temporal \
+  --validity-period 365d \
+  --ca-certificate-file output_dir/ca.pem \
+  --ca-key-file output_dir/ca.key
 
 # Generate leaf certificate from CA
-tcld gen leaf --org temporal --ca output_dir/ca.pem --ca-key output_dir/ca.key -d output_dir
+tcld generate-certificates end-entity-certificate \
+  --organization temporal \
+  --validity-period 365d \
+  --ca-certificate-file output_dir/ca.pem \
+  --ca-key-file output_dir/ca.key \
+  --certificate-file output_dir/client.pem \
+  --key-file output_dir/client.key
 
-# With custom common name
-tcld gen leaf --org temporal --ca ca.pem --ca-key ca.key --cn my-service -d output_dir
+# Generate another leaf certificate
+tcld generate-certificates end-entity-certificate \
+  --organization temporal \
+  --validity-period 365d \
+  --ca-certificate-file ca.pem \
+  --ca-key-file ca.key \
+  --certificate-file output_dir/client.pem \
+  --key-file output_dir/client.key
 ```
 
 ### Private Connectivity
 
 ```bash
-# List private connectivity rules
-tcld namespace private-connectivity list --namespace <namespace>
+# List connectivity rules for a namespace
+tcld connectivity-rule list --namespace <namespace>
 
 # Get rule details
-tcld namespace private-connectivity get --namespace <namespace> --id <rule-id>
+tcld connectivity-rule get --connectivity-rule-id <rule-id>
 
-# Add AWS PrivateLink endpoint
-tcld namespace private-connectivity add \
-  --namespace <namespace> \
-  --aws-private-link-info.vpc-endpoint-service-name <service-name> \
-  --aws-private-link-info.allowed-principal-arns <arn>
+# Create AWS PrivateLink rule
+tcld connectivity-rule create \
+  --connectivity-type private \
+  --connection-id "vpce-abcde" \
+  --region "aws-us-east-1"
 
-# Add GCP Private Service Connect endpoint
-tcld namespace private-connectivity add \
-  --namespace <namespace> \
-  --gcp-service-connect-info.target-uri <uri> \
-  --gcp-service-connect-info.allowed-project-ids <project-id>
+# Create GCP Private Service Connect rule
+tcld connectivity-rule create \
+  --connectivity-type private \
+  --connection-id "1234567890" \
+  --region "gcp-us-central1" \
+  --gcp-project-id "my-project-123"
+
+# Attach connectivity rules to a namespace
+tcld namespace set-connectivity-rules \
+  --namespace "my-namespace.abc123" \
+  --connectivity-rule-ids "rule-id-1" \
+  --connectivity-rule-ids "rule-id-2"
 ```
 
 ### Account & User Management
@@ -233,18 +250,10 @@ All auth methods use the same Namespace Endpoint.
 |----------|-------------|
 | `TEMPORAL_ADDRESS` | `<namespace>.<account>.tmprl.cloud:7233` (Namespace Endpoint) |
 | `TEMPORAL_NAMESPACE` | Namespace name (`<name>.<account-id>`) |
-| `TEMPORAL_TLS_CERT` | Path to client certificate (mTLS only) |
-| `TEMPORAL_TLS_KEY` | Path to client key (mTLS only) |
-| `TEMPORAL_TLS_CA` | Path to CA certificate (mTLS, optional for Cloud) |
+| `TEMPORAL_TLS_CLIENT_CERT_PATH` | Path to client certificate (mTLS only) |
+| `TEMPORAL_TLS_CLIENT_KEY_PATH` | Path to client key (mTLS only) |
+| `TEMPORAL_TLS_SERVER_CA_CERT_PATH` | Path to CA certificate (mTLS, optional for Cloud) |
 | `TEMPORAL_API_KEY` | API key value (API key auth only) |
-
-### tcld Configuration
-
-| Variable | Description |
-|----------|-------------|
-| `TEMPORAL_CLOUD_API_KEY` | API key for tcld (optional) |
-
-**Config file location:** `~/.config/temporalcloud/credentials.json`
 
 ## Error Codes Reference
 

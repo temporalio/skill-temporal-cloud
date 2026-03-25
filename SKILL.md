@@ -23,7 +23,7 @@ Cloud issues are frustrating because they sit at the intersection of configurati
 
 | Category | Key Symptoms | First Check |
 |----------|--------------|-------------|
-| **tcld Login** | Browser not opening, token refresh failed, wrong org | `tcld config get` |
+| **tcld Login** | login failed, token refresh failed, wrong account | `tcld account get` |
 | **Connection/Auth** | can't connect, access denied, handshake failures | Endpoint format + DNS + port connectivity |
 | **Ambiguous Runtime Errors** | `context deadline exceeded`, `workflow is busy` | Identify the operation and layer first |
 | **mTLS/Certs** | x509 errors, unknown authority, expired | `openssl x509 -enddate` |
@@ -51,8 +51,7 @@ Ask the user:
 - Is this SDK code, `temporal` CLI, or `tcld`?
 
 **For tcld issues:**
-- Can you run `tcld config get`?
-- Are you in a headless/SSH environment?
+- Can you run `tcld account get`?
 - Multiple Temporal accounts?
 
 **For connection issues:**
@@ -98,17 +97,16 @@ If the problem is ambiguous, say so explicitly and keep the recommendation scope
 ```
 Symptom: tcld login not working
 │
-├─ Browser not opening?
-│  ├─ Headless/SSH environment → tcld login --disable-pop-up
-│  └─ Browser available but not launching
-│     └─ Check BROWSER env var, try manually opening URL
+├─ Can `tcld account get` run?
+│  ├─ Yes → Login is valid; continue with account verification
+│  └─ No → Run `tcld login`
 │
 ├─ Token refresh failed?
 │  └─ tcld logout && tcld login
 │
 ├─ Wrong organization/account?
-│  ├─ tcld config get (check current account)
-│  └─ tcld config set account <correct-account-id>
+│  ├─ tcld account get
+│  └─ Verify the expected namespace appears in `tcld namespace list`
 │
 └─ "unauthorized" or auth errors?
    └─ tcld logout && tcld login
@@ -215,7 +213,7 @@ When the user pastes SDK config, validate the config itself before suggesting lo
 2. Address / `HostPort`: should be Namespace Endpoint (`<ns>.<acct>.tmprl.cloud:7233`) for most cases
 3. Namespace: full Cloud namespace format (`<namespace>.<account-id>`)
 4. TLS config: empty `tls.Config{}` is normal for API key auth; client cert/key required for mTLS
-5. Environment config: prefer `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, `TEMPORAL_API_KEY`, `TEMPORAL_TLS_CERT`, `TEMPORAL_TLS_KEY`
+5. Environment config: prefer `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, `TEMPORAL_API_KEY`, `TEMPORAL_TLS_CLIENT_CERT_PATH`, `TEMPORAL_TLS_CLIENT_KEY_PATH`
 
 **Common snippet diagnoses:**
 - Using regional endpoint (`*.api.temporal.io`) when Namespace Endpoint would work → simplify to `<ns>.<acct>.tmprl.cloud:7233`
@@ -245,7 +243,10 @@ Symptom: x509 certificate errors
 ├─ "certificate has expired"
 │  ├─ Check expiry: openssl x509 -enddate -noout -in cert.pem
 │  └─ Generate new cert:
-│     tcld gen leaf --ca ca.pem --ca-key ca.key -d .
+│     tcld generate-certificates end-entity-certificate \
+│       --organization <org> --validity-period 365d \
+│       --ca-certificate-file ca.pem --ca-key-file ca.key \
+│       --certificate-file client.pem --key-file client.key
 │
 ├─ "private key does not match"
 │  └─ Wrong key file - verify match:
@@ -388,8 +389,10 @@ Symptom: PrivateLink or Private Service Connect not working
 │  ├─ Check: DNS resolution
 │  │  └─ Should resolve to private IP (10.x or 172.x)
 │  │
-│  └─ Check: Temporal config
-│     └─ tcld namespace private-connectivity list --namespace <ns>
+│  └─ Check: Connectivity rules
+│     ├─ tcld connectivity-rule list --namespace <ns>
+│     └─ If needed, attach rules with:
+│        tcld namespace set-connectivity-rules --namespace <ns> --connectivity-rule-ids <id>
 │
 ├─ GCP Private Service Connect
 │  ├─ Check: PSC endpoint status
@@ -402,8 +405,8 @@ Symptom: PrivateLink or Private Service Connect not working
 │     └─ Cloud DNS zone for tmprl.cloud pointing to PSC
 │
 └─ General
-   └─ Verify endpoint is registered:
-      tcld namespace private-connectivity get --namespace <ns> --id <id>
+   └─ Verify rule details:
+      tcld connectivity-rule get --connectivity-rule-id <id>
 ```
 
 ### Rate Limiting
@@ -445,8 +448,8 @@ See `references/common-scenarios.md` for step-by-step walkthroughs:
 | Regional endpoint when unnecessary | Using `*.api.temporal.io` when Namespace Endpoint works | Switch to `<namespace>.<account>.tmprl.cloud:7233` |
 | Old endpoint docs | Following stale examples from before Namespace Endpoints were universal | Use Namespace Endpoint: `<ns>.<acct>.tmprl.cloud:7233` |
 | Expired certs | Not monitoring expiry | Set up alerts, rotate before expiry |
-| tcld wrong account | Logged into different org | `tcld config set account <id>` |
-| Headless tcld login | Using `tcld login` in SSH | Use `tcld login --disable-pop-up` |
+| tcld wrong account | Logged into different org | Use `tcld account get`, then verify the namespace in `tcld namespace list` |
+| Stale tcld login | Cached auth state is no longer valid | `tcld logout && tcld login` |
 | DNS caching | K8s pods caching old DNS | Restart pods after endpoint changes |
 | Missing port | Firewall blocks 7233 | Ensure egress allowed on port 7233 |
 
@@ -456,7 +459,7 @@ See `references/common-scenarios.md` for step-by-step walkthroughs:
 - **Check the simple things first** - DNS, port connectivity, cert expiry
 - **Use Namespace Endpoint by default** - `<ns>.<acct>.tmprl.cloud:7233` works for both mTLS and API key auth
 - **Use openssl for cert issues** - It gives clearer error messages than SDKs
-- **tcld config get is your friend** - Shows current login state
+- **tcld account get is your friend** - Shows the current account context
 - **Namespace names are case-sensitive** - Match exactly
 - **API keys are easier than mTLS** - Consider for simpler setups
 - **Point users to env config docs** - [Environment configuration](https://docs.temporal.io/develop/environment-configuration) covers all SDK connection options
