@@ -2,6 +2,19 @@
 
 Technical reference for debugging Temporal Cloud connectivity, authentication, and configuration issues.
 
+## Table of Contents
+
+- [CLI Tools Overview](#cli-tools-overview) — `tcld` vs `temporal` comparison, related resources
+- [Connectivity Diagnostic Ladder](#connectivity-diagnostic-ladder) — 7-layer bottom-up debugging model
+- [tcld Commands](#tcld-commands) — auth, namespace, certs, private connectivity, account management
+- [temporal CLI Commands](#temporal-cli-commands) — connection testing, task queues, workflows, endpoint selection
+- [OpenSSL Commands](#openssl-commands) — certificate inspection, TLS connection testing
+- [Environment Variables](#environment-variables) — SDK connection env vars
+- [Client and Version Considerations](#client-and-version-considerations) — tcld vs temporal CLI vs SDK, version matters for diagnosis
+- [Error Codes Reference](#error-codes-reference) — connection errors, ambiguous errors, TLS, auth, rate limiting
+- [Cloud Endpoint Patterns](#cloud-endpoint-patterns) — standard, regional, private connectivity endpoints
+- [Quick Diagnostic Commands](#quick-diagnostic-commands) — full connectivity check scripts (mTLS + API key)
+
 ## CLI Tools Overview
 
 Two main CLIs for Temporal Cloud:
@@ -13,6 +26,25 @@ Two main CLIs for Temporal Cloud:
 
 **Related resources:**
 - [Worker best practices](https://docs.temporal.io/best-practices/worker) - deployment, tuning, and operational guidance
+- [Dev Success: Troubleshooting Connection Issues](https://github.com/temporalio/dev-success/blob/main/troubleshooting-connection-issues-to-temporal-cloud.md) - companion step-by-step connection troubleshooting guide
+
+## Connectivity Diagnostic Ladder
+
+Connection issues have layers. If a lower layer fails, everything above it will fail too. Debug bottom-up:
+
+| Layer | Tool | What it proves | Example |
+|-------|------|----------------|---------|
+| 1. Network reachability | `nc` (netcat) | TCP port is open | `nc -zv <host> 7233` |
+| 2. TLS handshake | `openssl s_client` | TLS terminates correctly | `openssl s_client -connect <host>:7233 -servername <host>` |
+| 3. HTTP connectivity | `curl` | HTTP/2 reaches the server | `curl -v --http2 https://<host>:7233` |
+| 4. gRPC connectivity | `grpcurl` | gRPC protocol works | `grpcurl <host>:7233 list` |
+| 5. Temporal auth + connectivity | `temporal` CLI | Temporal accepts credentials | `temporal workflow list --limit 1 ...` |
+| 6. Language-level networking | HTTP/gRPC from the language | Runtime can connect | Varies by SDK |
+| 7. Full SDK connection | SDK `Client.connect` | Application-level connection works | Varies by SDK |
+
+Start at layer 1. Move up only after the current layer succeeds.
+
+> **Note:** `grpcurl` requires [separate installation](https://github.com/fullstorydev/grpcurl). Layers 6-7 are SDK-specific — see the Client and Version Considerations section below.
 
 ## tcld Commands
 
@@ -255,6 +287,34 @@ All auth methods use the same Namespace Endpoint.
 | `TEMPORAL_TLS_SERVER_CA_CERT_PATH` | Path to CA certificate (mTLS, optional for Cloud) |
 | `TEMPORAL_API_KEY` | API key value (API key auth only) |
 
+## Client and Version Considerations
+
+When diagnosing connection or auth issues, first determine what the user is running:
+
+1. **Which client?** — `tcld`, `temporal` CLI, or an SDK (Go, Java, TypeScript, Python, .NET, Ruby)
+2. **Which version?** (e.g., `tcld v0.x.x`, `temporal v1.x.x`, `go.temporal.io/sdk v1.x.x`)
+3. **Which runtime/language version?** (Go 1.22, Java 17, Node 20, Python 3.12, etc. — SDK only)
+
+Each client has different connection and auth paths. `tcld` uses browser-based OAuth to the control plane. `temporal` CLI uses mTLS or API keys to namespace endpoints. SDKs use mTLS or API keys but with SDK-specific TLS and connection handling.
+
+Why SDK version matters:
+
+| Factor | Example impact |
+|--------|---------------|
+| SDK-specific connection patterns | TypeScript uses a native Rust Core bridge; Go uses pure gRPC |
+| Known bugs in older versions | Always check SDK release notes for fixes before deep-diving into network debugging |
+| TLS/CA cert handling differences | TypeScript in Docker may need `ca-certificates` package installed; missing it causes `UnknownIssuer` |
+| API key support availability | Older SDK versions may not support API key auth |
+| PrivateLink server name override | Syntax differs per SDK (see Private Connectivity section) |
+
+SDK repositories and development docs:
+- Go: `github.com/temporalio/sdk-go` — [development docs](https://docs.temporal.io/develop/go)
+- Java: `github.com/temporalio/sdk-java` — [development docs](https://docs.temporal.io/develop/java)
+- TypeScript: `github.com/temporalio/sdk-typescript` — [development docs](https://docs.temporal.io/develop/typescript)
+- Python: `github.com/temporalio/sdk-python` — [development docs](https://docs.temporal.io/develop/python)
+- .NET: `github.com/temporalio/sdk-dotnet` — [development docs](https://docs.temporal.io/develop/dotnet)
+- Ruby: `github.com/temporalio/sdk-ruby` — [development docs](https://docs.temporal.io/develop/ruby)
+
 ## Error Codes Reference
 
 ### Connection Errors
@@ -484,6 +544,8 @@ Address: <namespace>.<account>.tmprl.cloud:7233
 (resolves to PSC endpoint)
 ```
 
+> **Important: Run diagnostics from the correct location.** When troubleshooting connection issues, commands must be run from the same machine, pod, or container where the problem occurs. For example, if a Kubernetes worker pod cannot connect, exec into that pod and run the commands there. Network reachability, DNS resolution, and TLS behavior can all differ between your laptop and the production environment.
+
 ## Quick Diagnostic Commands
 
 ### Full Connectivity Check
@@ -491,6 +553,7 @@ Address: <namespace>.<account>.tmprl.cloud:7233
 ```bash
 #!/bin/bash
 # --- mTLS variant ---
+# NOTE: Run this script from the machine/pod experiencing the issue.
 NS="your-namespace.account-id"
 CERT="client.pem"
 KEY="client.key"
@@ -519,6 +582,7 @@ temporal workflow list --limit 1 \
 ```bash
 #!/bin/bash
 # --- API key variant (same Namespace Endpoint, different auth) ---
+# NOTE: Run this script from the machine/pod experiencing the issue.
 NS="your-namespace.account-id"
 HOST="$NS.tmprl.cloud"
 ADDRESS="$HOST:7233"
