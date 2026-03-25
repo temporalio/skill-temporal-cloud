@@ -41,8 +41,18 @@ User is setting up connection to a new namespace for the first time.
 tcld namespace list
 
 # 2. Generate certs (if needed)
-tcld gen ca --org mycompany --validity-period 365d -d certs/
-tcld gen leaf --org mycompany --ca certs/ca.pem --ca-key certs/ca.key -d certs/
+tcld generate-certificates certificate-authority-certificate \
+  --organization mycompany \
+  --validity-period 365d \
+  --ca-certificate-file certs/ca.pem \
+  --ca-key-file certs/ca.key
+tcld generate-certificates end-entity-certificate \
+  --organization mycompany \
+  --validity-period 365d \
+  --ca-certificate-file certs/ca.pem \
+  --ca-key-file certs/ca.key \
+  --certificate-file certs/client.pem \
+  --key-file certs/client.key
 
 # 3. Upload CA
 tcld namespace accepted-client-ca add \
@@ -66,13 +76,21 @@ Rotate certs before expiry. If rotating CA, add new CA first, deploy new certs, 
 openssl x509 -enddate -noout -in client.pem
 
 # Generate new leaf cert (same CA)
-tcld gen leaf --org mycompany \
-  --ca ca.pem --ca-key ca.key \
-  -d new-certs/
+tcld generate-certificates end-entity-certificate \
+  --organization mycompany \
+  --validity-period 365d \
+  --ca-certificate-file ca.pem \
+  --ca-key-file ca.key \
+  --certificate-file new-certs/client.pem \
+  --key-file new-certs/client.key
 
 # If rotating CA too:
 # 1. Generate new CA
-tcld gen ca --org mycompany --validity-period 365d -d new-ca/
+tcld generate-certificates certificate-authority-certificate \
+  --organization mycompany \
+  --validity-period 365d \
+  --ca-certificate-file new-ca/ca.pem \
+  --ca-key-file new-ca/ca.key
 
 # 2. Add new CA to namespace (keep old one temporarily)
 tcld namespace accepted-client-ca add \
