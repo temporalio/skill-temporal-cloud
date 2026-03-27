@@ -16,6 +16,7 @@ Cloud issues are frustrating because they sit at the intersection of configurati
 - See `references/common-scenarios.md` for step-by-step setup walkthroughs
 - [Environment configuration docs](https://docs.temporal.io/develop/environment-configuration) - SDK setup for connecting to Cloud
 - [HA namespace connectivity](https://docs.temporal.io/cloud/high-availability/ha-connectivity) - multi-region endpoint and DNS setup
+- [Dev Success troubleshooting guide](https://github.com/temporalio/dev-success/blob/main/troubleshooting-connection-issues-to-temporal-cloud.md) - companion connection troubleshooting guide
 
 **Out of scope:** Worker performance tuning, scaling, metrics interpretation, SDK-specific config, deployment patterns. Those topics are covered by separate worker-focused skills.
 
@@ -46,6 +47,7 @@ Ask the user:
 
 **For SDK/client snippet reviews:**
 - Which auth method are you using: API key or mTLS?
+- Which SDK and version are you using?
 - What exact `HostPort` / address are you using?
 - What exact Namespace are you using?
 - Is this SDK code, `temporal` CLI, or `tcld`?
@@ -57,6 +59,7 @@ Ask the user:
 **For connection issues:**
 - What's your exact address / `HostPort`?
 - Using mTLS or API keys?
+- Which SDK and version are you using?
 - Any firewall/proxy between you and Cloud?
 
 **For ambiguous runtime errors:**
