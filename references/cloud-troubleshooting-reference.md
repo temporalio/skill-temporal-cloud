@@ -30,21 +30,18 @@ Two main CLIs for Temporal Cloud:
 
 ## Connectivity Diagnostic Ladder
 
+> **Important:** Run diagnostics from the same machine, pod, or container where the problem occurs. Network reachability, DNS resolution, and TLS behavior can differ between your laptop and the production environment.
+
 Connection issues have layers. If a lower layer fails, everything above it will fail too. Debug bottom-up:
 
-| Layer | Tool | What it proves | Example |
-|-------|------|----------------|---------|
-| 1. Network reachability | `nc` (netcat) | TCP port is open | `nc -zv <host> 7233` |
-| 2. TLS handshake | `openssl s_client` | TLS terminates correctly | `openssl s_client -connect <host>:7233 -servername <host>` |
-| 3. HTTP connectivity | `curl` | HTTP/2 reaches the server | `curl -v --http2 https://<host>:7233` |
-| 4. gRPC connectivity | `grpcurl` | gRPC protocol works | `grpcurl <host>:7233 list` |
-| 5. Temporal auth + connectivity | `temporal` CLI | Temporal accepts credentials | `temporal workflow list --limit 1 ...` |
-| 6. Language-level networking | HTTP/gRPC from the language | Runtime can connect | Varies by SDK |
-| 7. Full SDK connection | SDK `Client.connect` | Application-level connection works | Varies by SDK |
+| Step | Tool | What it proves | Example |
+|------|------|----------------|---------|
+| 1. Port reachability | `nc` (netcat) | TCP port 7233 is reachable | `nc -zvw10 <host> 7233` |
+| 2. Temporal auth + connectivity | `temporal` CLI | Temporal accepts the presented credentials | `temporal workflow list --address <host>:7233 --namespace <namespace> ...` |
+| 3. TLS handshake follow-up | `openssl s_client` | The client certificate and TLS handshake behave as expected | `openssl s_client -connect <host>:7233 -showcerts -cert client.pem -key client.key -tls1_2 -servername <host>` |
+| 4. SDK sample / app code | SDK sample or user code | The runtime and SDK configuration are correct | Varies by SDK |
 
-Start at layer 1. Move up only after the current layer succeeds.
-
-> **Note:** `grpcurl` requires [separate installation](https://github.com/fullstorydev/grpcurl). Layers 6-7 are SDK-specific — see the Client and Version Considerations section below.
+Start at step 1. Move up only after the current step succeeds.
 
 ## tcld Commands
 
@@ -302,10 +299,10 @@ Why SDK version matters:
 | Factor | Example impact |
 |--------|---------------|
 | SDK-specific connection patterns | TypeScript uses a native Rust Core bridge; Go uses pure gRPC |
-| Known bugs in older versions | Always check SDK release notes for fixes before deep-diving into network debugging |
-| TLS/CA cert handling differences | TypeScript in Docker may need `ca-certificates` package installed; missing it causes `UnknownIssuer` |
+| Known client limitations or fixes | Check the SDK repository and issue tracker if diagnosis points to client-specific behavior |
+| TLS/CA cert handling differences | Some runtimes need system CA bundles installed; for example, TypeScript in Docker may need `ca-certificates` to avoid `UnknownIssuer` |
 | API key support availability | Older SDK versions may not support API key auth |
-| PrivateLink server name override | Syntax differs per SDK (see Private Connectivity section) |
+| Private connectivity configuration | TLS server name override syntax differs per SDK when private DNS is not configured |
 
 SDK repositories and development docs:
 - Go: `github.com/temporalio/sdk-go` — [development docs](https://docs.temporal.io/develop/go)
@@ -543,8 +540,6 @@ Address: <namespace>.<account>.tmprl.cloud:7233
 Address: <namespace>.<account>.tmprl.cloud:7233
 (resolves to PSC endpoint)
 ```
-
-> **Important: Run diagnostics from the correct location.** When troubleshooting connection issues, commands must be run from the same machine, pod, or container where the problem occurs. For example, if a Kubernetes worker pod cannot connect, exec into that pod and run the commands there. Network reachability, DNS resolution, and TLS behavior can all differ between your laptop and the production environment.
 
 ## Quick Diagnostic Commands
 

@@ -47,6 +47,7 @@ Ask the user:
 
 **For SDK/client snippet reviews:**
 - Which auth method are you using: API key or mTLS?
+- Which SDK and version are you using?
 - What exact `HostPort` / address are you using?
 - What exact Namespace are you using?
 - Is this SDK code, `temporal` CLI, or `tcld`?
